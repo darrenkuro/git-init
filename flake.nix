@@ -14,7 +14,6 @@
   }:
     flake-utils.lib.eachDefaultSystem (system: let
       pkgs = import nixpkgs {inherit system;};
-      desc = self.description;
     in {
       packages.default = pkgs.rustPlatform.buildRustPackage {
         pname = "git-init";
@@ -30,7 +29,7 @@
         doCheck = false;
 
         meta = with pkgs.lib; {
-          description = desc;
+          description = "CLI for initializing repos to GitHub";
           homepage = "https://github.com/darrenkuro/git-init";
           license = licenses.mit;
           maintainers = [maintainers.darrenkuro];
