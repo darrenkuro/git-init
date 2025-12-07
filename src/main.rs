@@ -93,6 +93,7 @@ fn replace_placeholders(file: &str, replacements: &[(&str, &str)]) -> Result<(),
 fn git_init() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let dir = args.dir.unwrap_or(".".to_string());
+	let path = Path::new(&dir);
 
     if is_inside_git_repo() {
         return Err("Already a git directory!".into());
@@ -116,7 +117,28 @@ fn git_init() -> Result<(), Box<dyn Error>> {
         ],
     )?;
 
-    env::set_current_dir(&dir)?;
+	let tmp_dir = format!("/tmp/{}_template_clone", repo_name);
+	if Path::new(&tmp_dir).exists() {
+        fs::remove_dir_all(&tmp_dir)?;
+    }
+	run_cmd("gh", &["repo", "clone", &repo_name, &tmp_dir])?;
+
+    for entry in fs::read_dir(&tmp_dir)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if name == ".git" {
+            continue; // Skip .git folder from the cloned repo
+        }
+        let from = entry.path();
+        let to = path.join(name);
+        if from.is_dir() {
+            fs_extra::dir::copy(&from, &path, &fs_extra::dir::CopyOptions::new().overwrite(true).content_only(true))?;
+        } else {
+            fs::copy(&from, &to)?;
+        }
+    }
+
+	fs::remove_dir_all(&tmp_dir)?;
 
     // Replace in-place
     replace_placeholders(
@@ -128,6 +150,17 @@ fn git_init() -> Result<(), Box<dyn Error>> {
     )?;
     replace_placeholders("LICENSE", &[("{{YEAR}}", &year)])?;
 
+	env::set_current_dir(&dir)?;
+	run_cmd("git", &["init"]);
+	run_cmd(
+        "git",
+        &[
+            "remote",
+            "add",
+            "origin",
+            &format!("https://github.com/darrenkuro/{}.git", repo_name),
+        ],
+    )?;
     run_cmd("git", &["add", "."])?;
     run_cmd("git", &["commit", "-m", COMMIT_MESSAGE])?;
     run_cmd("git", &["push", "-u", "origin", "main"])?;
