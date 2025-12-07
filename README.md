@@ -1,9 +1,9 @@
-<h1 align="center">Git-init</h1>
+<h1 align="center">git-init</h1>
 
 <p align="center">
     <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"/>
     <img src="https://img.shields.io/badge/status-maintained-brightgreen" alt="Status">
-    <img src="https://img.shields.io/badge/date-Dev%2007%2C%202025-ff6984?style=flat-square&logo=Cachet&logoColor=white" alt="Date"/>
+    <img src="https://img.shields.io/badge/date-Dec%207%2C%202025-ff6984?style=flat-square&logo=Cachet&logoColor=white" alt="Date"/>
 </p>
 
 > A personal CLI for initializing repos to Github.
