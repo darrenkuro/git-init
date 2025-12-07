@@ -1,6 +1,7 @@
 use chrono::{Datelike, Local};
 use clap::Parser;
 use colored::*;
+use std::ffi::OsStr;
 use std::error::Error;
 use std::path::Path;
 use std::process::Command;
@@ -10,7 +11,10 @@ use std::{env, fs};
 #[command(author, version, about, long_about = None)]
 
 struct Args {
-    dir: Option<String>,
+    /// Directory to use (default: current directory)
+    #[arg(default_value = ".")]
+    dir: String,
+    /// Make the GitHub repo public
     #[arg(long)]
     public: bool,
 }
@@ -90,9 +94,32 @@ fn replace_placeholders(file: &str, replacements: &[(&str, &str)]) -> Result<(),
     Ok(())
 }
 
+fn copy_template_into(target: &Path, tmp_clone: &Path) -> Result<(), Box<dyn Error>> {
+    // Copy everything from tmp_clone/* into target/, excluding .git
+    for entry in fs::read_dir(tmp_clone)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if name == OsStr::new(".git") {
+            continue;
+        }
+        let from = entry.path();
+        let to = target.join(&name);
+        if from.is_dir() {
+            let mut opts = fs_extra::dir::CopyOptions::new();
+            opts.overwrite = true;
+            opts.copy_inside = true; // content-only when copying a dir
+            fs_extra::dir::copy(&from, &to, &opts)?; // this creates/overwrites `to`
+        } else {
+            fs::create_dir_all(to.parent().unwrap_or(target))?;
+            fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
 fn git_init() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
-    let dir = args.dir.unwrap_or(".".to_string());
+    let dir = args.dir;
 	let path = Path::new(&dir);
 
     if is_inside_git_repo() {
@@ -104,6 +131,8 @@ fn git_init() -> Result<(), Box<dyn Error>> {
     let project_title = hyphen_to_title(&repo_name);
     let year = Local::now().year().to_string();
     // let repo_name = get_current_dir()?;
+
+	// Create remote repo from template
     run_cmd(
         "gh",
         &[
@@ -113,31 +142,18 @@ fn git_init() -> Result<(), Box<dyn Error>> {
             "--template",
             TEMPLATE_REPO,
             visibility,
-            "--clone",
+            "--confirm",
         ],
     )?;
 
-	let tmp_dir = format!("/tmp/{}_template_clone", repo_name);
-	if Path::new(&tmp_dir).exists() {
+	// Clone to a temp dir and copy into our target dir
+	let tmp_dir = env::temp_dir().join(format!("{}_template_clone", repo_name));
+	if tmp_dir.exists() {
         fs::remove_dir_all(&tmp_dir)?;
     }
-	run_cmd("gh", &["repo", "clone", &repo_name, &tmp_dir])?;
+	run_cmd("gh", &["repo", "clone", &repo_name, tmp_dir.to_str().unwrap()])?;
 
-    for entry in fs::read_dir(&tmp_dir)? {
-        let entry = entry?;
-        let name = entry.file_name();
-        if name == ".git" {
-            continue; // Skip .git folder from the cloned repo
-        }
-        let from = entry.path();
-        let to = path.join(name);
-        if from.is_dir() {
-            fs_extra::dir::copy(&from, &path, &fs_extra::dir::CopyOptions::new().overwrite(true).content_only(true))?;
-        } else {
-            fs::copy(&from, &to)?;
-        }
-    }
-
+	copy_template_into(path, &tmp_dir)?;
 	fs::remove_dir_all(&tmp_dir)?;
 
     // Replace in-place
@@ -151,7 +167,7 @@ fn git_init() -> Result<(), Box<dyn Error>> {
     replace_placeholders("LICENSE", &[("{{YEAR}}", &year)])?;
 
 	env::set_current_dir(&dir)?;
-	run_cmd("git", &["init"]);
+	run_cmd("git", &["init"])?;
 	run_cmd(
         "git",
         &[
